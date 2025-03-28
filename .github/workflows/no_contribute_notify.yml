@@ -1,0 +1,119 @@
+name: コントリビュート通知
+
+on:
+  schedule:
+    - cron: '0 1 * * *'  # 10:00 JST (UTC+9)
+    - cron: '0 11 * * *' # 20:00 JST (UTC+9)
+    - cron: '0 13 * * *' # 22:00 JST (UTC+9)
+
+jobs:
+  check-contributions:
+    runs-on: ubuntu-latest
+    outputs:
+      has_contributed: ${{ steps.check.outputs.has_contributed }}
+      timestamp: ${{ steps.timestamp.outputs.value }}
+    steps:
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Set timestamp
+        id: timestamp
+        run: echo "value=$(date +'%Y-%m-%d %H:%M:%S %Z')" >> $GITHUB_OUTPUT
+      
+      - name: Check GitHub contributions
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USERNAME: ${{ github.repository_owner }}
+        run: |
+          # 今日の日付を取得
+          TODAY=$(date +'%Y-%m-%d')
+          
+          # GitHub APIを使用して今日のアクティビティを取得
+          # 1. コミット (デフォルトブランチまたはgh-pagesブランチへの)
+          COMMITS=$(gh api graphql -f query='
+            query($username:String!, $from:DateTime!, $to:DateTime!) {
+              user(login: $username) {
+                contributionsCollection(from: $from, to: $to) {
+                  commitContributionsByRepository {
+                    contributions {
+                      totalCount
+                    }
+                  }
+                }
+              }
+            }' -f username="$GITHUB_USERNAME" -f from="${TODAY}T00:00:00" -f to="${TODAY}T23:59:59")
+          
+          # 2. Issuesのオープン
+          ISSUES=$(gh api graphql -f query='
+            query($username:String!, $from:DateTime!, $to:DateTime!) {
+              user(login: $username) {
+                contributionsCollection(from: $from, to: $to) {
+                  issueContributions {
+                    totalCount
+                  }
+                }
+              }
+            }' -f username="$GITHUB_USERNAME" -f from="${TODAY}T00:00:00" -f to="${TODAY}T23:59:59")
+          
+          # 3. プルリクエスト、ディスカッション等
+          PR_CONTRIBS=$(gh api graphql -f query='
+            query($username:String!, $from:DateTime!, $to:DateTime!) {
+              user(login: $username) {
+                contributionsCollection(from: $from, to: $to) {
+                  pullRequestContributions {
+                    totalCount
+                  }
+                  pullRequestReviewContributions {
+                    totalCount
+                  }
+                  repositoryContributions {
+                    totalCount
+                  }
+                }
+              }
+            }' -f username="$GITHUB_USERNAME" -f from="${TODAY}T00:00:00" -f to="${TODAY}T23:59:59")
+          
+          # コントリビュート数を集計
+          COMMIT_COUNT=$(echo "$COMMITS" | jq '.data.user.contributionsCollection.commitContributionsByRepository[].contributions.totalCount' | jq -s 'add // 0')
+          ISSUE_COUNT=$(echo "$ISSUES" | jq '.data.user.contributionsCollection.issueContributions.totalCount // 0')
+          PR_COUNT=$(echo "$PR_CONTRIBS" | jq '.data.user.contributionsCollection.pullRequestContributions.totalCount // 0')
+          PR_REVIEW_COUNT=$(echo "$PR_CONTRIBS" | jq '.data.user.contributionsCollection.pullRequestReviewContributions.totalCount // 0')
+          REPO_COUNT=$(echo "$PR_CONTRIBS" | jq '.data.user.contributionsCollection.repositoryContributions.totalCount // 0')
+          
+          TOTAL_COUNT=$((COMMIT_COUNT + ISSUE_COUNT + PR_COUNT + PR_REVIEW_COUNT + REPO_COUNT))
+          
+          if [ "$TOTAL_COUNT" -gt 0 ]; then
+            echo "コントリビュートがあります: $TOTAL_COUNT"
+            echo "has_contributed=true" >> $GITHUB_OUTPUT
+          else
+            echo "今日はまだコントリビュートがありません"
+            echo "has_contributed=false" >> $GITHUB_OUTPUT
+          fi
+
+  notify-line:
+    needs: check-contributions
+    if: needs.check-contributions.outputs.has_contributed == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send LINE notification
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          TIMESTAMP: ${{ needs.check-contributions.outputs.timestamp }}
+        run: |
+          curl -v -X POST https://api.line.me/v2/bot/message/push \
+          -H 'Content-Type: application/json' \
+          -H "Authorization: Bearer ${LINE_CHANNEL_ACCESS_TOKEN}" \
+          -d @- << EOF
+          {
+            "to": "${LINE_USER_ID}",
+            "messages": [
+              {
+                "type": "text",
+                "text": "😢 今日 ($TIMESTAMP) はまだGitHubにコントリビュートがありません。何かコミットしましょう！"
+              }
+            ]
+          }
+          EOF
