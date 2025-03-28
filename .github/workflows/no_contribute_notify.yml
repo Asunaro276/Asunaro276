@@ -106,14 +106,14 @@ jobs:
         run: |
           curl -v -X POST https://api.line.me/v2/bot/message/push \
           -H 'Content-Type: application/json' \
-          -H "Authorization: Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}" \
+          -H "Authorization: Bearer ${LINE_CHANNEL_ACCESS_TOKEN}" \
           -d @- << EOF
           {
-            "to": "${env.LINE_USER_ID}",
+            "to": "${LINE_USER_ID}",
             "messages": [
               {
                 "type": "text",
-                "text": "😢 今日 ($TIMESTAMP) はまだGitHubにコントリビュートがありません。何かコミットしましょう！"
+                "text": "😢 今日 (${TIMESTAMP}) はまだGitHubにコントリビュートがありません。何かコミットしましょう！"
               }
             ]
           }
