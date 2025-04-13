@@ -13,13 +13,13 @@ jobs:
       has_contributed: ${{ steps.check.outputs.has_contributed }}
       timestamp: ${{ steps.timestamp.outputs.value }}
     steps:
-      - name: Get current date
+      - name: Get current date (JST)
         id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        run: echo "date=$(TZ='Asia/Tokyo' date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
-      - name: Set timestamp
+      - name: Set timestamp (JST)
         id: timestamp
-        run: echo "value=$(date +'%Y-%m-%d %H:%M:%S %Z')" >> $GITHUB_OUTPUT
+        run: echo "value=$(TZ='Asia/Tokyo' date +'%Y-%m-%d %H:%M:%S JST')" >> $GITHUB_OUTPUT
       
       - name: Check GitHub contributions
         id: check
@@ -27,8 +27,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USERNAME: ${{ github.repository_owner }}
         run: |
-          # 今日の日付を取得
-          TODAY=$(date +'%Y-%m-%d')
+          # 今日の日付を取得 (JST)
+          TODAY=$(TZ='Asia/Tokyo' date +'%Y-%m-%d')
           
           # GitHub APIを使用して今日のアクティビティを取得
           # 1. コミット (デフォルトブランチまたはgh-pagesブランチへの)
